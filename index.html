@@ -106,6 +106,7 @@ details{margin-top:6px;font-size:14px;color:var(--ink-2)}
 details summary{cursor:pointer;color:var(--accent)}
 details ol{padding-left:20px;margin:8px 0}
 .welcome{margin-top:24px}
+.welcome-note{margin-top:16px;border-color:var(--warm)}
 .welcome h1{font-size:28px;letter-spacing:-.02em;margin:0 0 6px}
 .steps{list-style:none;padding:0;margin:16px 0}
 .steps li{display:flex;gap:12px;margin:10px 0}
@@ -126,20 +127,18 @@ details ol{padding-left:20px;margin:8px 0}
 
 <main class="wrap">
   <!-- First-run screen -->
-  <section id="welcome" class="welcome" hidden>
-    <h1>Stop typing in events.</h1>
-    <p class="muted">Paste a message, an email or a school newsletter, or snap a photo of a flyer. SnapCal finds the dates and puts them in your Google Calendar.</p>
-    <ol class="steps">
-      <li><span class="n">1</span><span>Open your setup link, or add your Gemini key in Settings (one-time).</span></li>
-      <li><span class="n">2</span><span>Connect your Google account.</span></li>
-      <li><span class="n">3</span><span>Paste or snap, review, and tap Add.</span></li>
-    </ol>
+  <section id="welcome" class="card welcome-note" hidden>
+    <p style="margin:0 0 10px"><b>One more step:</b> this device doesn't have your Gemini key yet, so SnapCal can't read text or photos. Open your setup link on this device, or paste the key in Settings.</p>
     <button class="btn primary block" id="openSetup" type="button">Open settings</button>
   </section>
 
-  <section id="app" hidden>
+  <section id="app">
     <h2>1 · Paste or snap</h2>
     <div class="card">
+      <div class="cal-pick" style="margin-bottom:12px">
+        <label for="calSel">Add to calendar</label>
+        <select id="calSel"><option value="primary">Primary calendar</option></select>
+      </div>
       <textarea id="text" placeholder="Paste anything with dates in it: a text thread, an email, a schedule…"></textarea>
       <label class="drop" id="drop">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -155,10 +154,6 @@ details ol{padding-left:20px;margin:8px 0}
 
     <section id="review" hidden>
       <h2>2 · Review &amp; add</h2>
-      <div class="cal-pick">
-        <label for="calSel">Calendar</label>
-        <select id="calSel"><option value="primary">Primary calendar</option></select>
-      </div>
       <div id="events"></div>
       <button class="btn primary block" id="addBtn" type="button">Add to Google Calendar</button>
       <p class="muted" style="text-align:center;margin-top:10px" id="addHint"></p>
@@ -218,14 +213,16 @@ const DEFAULT_CLIENT_ID = '230486710280-8bdtq6p9uv08o8mv95rtbvtr1k6gis1d.apps.go
 
 // One-tap setup: opening the app with #gemini=KEY saves the key on this device and removes it
 // from the address bar. The part after # is never sent to the web server.
-(() => {
+// Also runs on hashchange, since opening the link in a tab that already shows SnapCal doesn't reload the page.
+function applySetupLink() {
   const h = new URLSearchParams(location.hash.slice(1));
   const key = (h.get('gemini') || '').trim();
-  if (!key) return;
+  if (!key) return false;
   store.set('geminiKey', key);
   history.replaceState(null, '', location.pathname + location.search);
-  window.__snapcalSetupDone = true;
-})();
+  return true;
+}
+const setupDone = applySetupLink();
 
 const cfg = () => ({
   clientId: (store.get('clientId', '') || '').trim() || DEFAULT_CLIENT_ID,
@@ -656,8 +653,8 @@ $('signOutBtn').onclick = () => {
 };
 
 function route() {
-  const c = cfg(), ready = !!(c.clientId && c.geminiKey);
-  $('welcome').hidden = ready; $('app').hidden = !ready;
+  const c = cfg();
+  $('welcome').hidden = !!c.geminiKey; $('app').hidden = false;
   $('acctChip').hidden = !c.clientId;
 }
 
@@ -667,7 +664,9 @@ if (cfg().clientId) loadGis().then(() => { initTokenClient(); if (validToken()) 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-if (window.__snapcalSetupDone) toast('Gemini key saved on this device. Tap “Connect Google” to finish.', 5000);
+const setupToast = () => toast(validToken() ? 'Gemini key saved on this device. You’re all set.' : 'Gemini key saved on this device. Tap “Connect Google” to finish.', 5000);
+if (setupDone) setupToast();
+window.addEventListener('hashchange', () => { if (applySetupLink()) { route(); setupToast(); } });
 readShareInbox().then(had => { if (had && cfg().geminiKey) runFind(); });
 })();
 </script>
