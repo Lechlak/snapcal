@@ -128,7 +128,7 @@ details ol{padding-left:20px;margin:8px 0}
 <main class="wrap">
   <!-- First-run screen -->
   <section id="welcome" class="card welcome-note" hidden>
-    <p style="margin:0 0 10px"><b>One more step:</b> this device doesn't have your Gemini key yet, so SnapCal can't read text or photos. Open your setup link on this device, or paste the key in Settings.</p>
+    <p style="margin:0 0 10px"><b>One more step:</b> this device doesn't have your Claude key yet, so SnapCal can't read text or photos. Open your setup link on this device, or paste the key in Settings.</p>
     <button class="btn primary block" id="openSetup" type="button">Open settings</button>
   </section>
 
@@ -177,7 +177,21 @@ details ol{padding-left:20px;margin:8px 0}
       </ol>
     </details>
 
-    <label class="f"><span>Gemini API key (reads your text and images)</span>
+    <label class="f"><span>Claude API key (reads your text and images)</span>
+      <input type="password" id="claudeKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label>
+    <details><summary>Where do I get this?</summary>
+      <ol>
+        <li>Open <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">Claude Console → API keys</a>.</li>
+        <li>Click <b>Create Key</b> and paste it here. Add a few dollars of credit under Billing.</li>
+      </ol>
+    </details>
+
+    <label class="f"><span>Claude model</span>
+      <input type="text" id="claudeModel" placeholder="claude-opus-5-5" autocomplete="off" spellcheck="false"></label>
+
+    <p class="muted" style="margin:8px 0 0">Without a Claude key, SnapCal uses Gemini instead:</p>
+
+    <label class="f"><span>Gemini API key</span>
       <input type="password" id="geminiKey" placeholder="AIza…" autocomplete="off" spellcheck="false"></label>
     <details><summary>Where do I get this?</summary>
       <ol>
@@ -214,11 +228,13 @@ const DEFAULT_CLIENT_ID = '230486710280-8bdtq6p9uv08o8mv95rtbvtr1k6gis1d.apps.go
 // One-tap setup: opening the app with #gemini=KEY saves the key on this device and removes it
 // from the address bar. The part after # is never sent to the web server.
 // Also runs on hashchange, since opening the link in a tab that already shows SnapCal doesn't reload the page.
+// #claude=KEY works the same way for the Claude key.
 function applySetupLink() {
   const h = new URLSearchParams(location.hash.slice(1));
-  const key = (h.get('gemini') || '').trim();
-  if (!key) return false;
-  store.set('geminiKey', key);
+  const claude = (h.get('claude') || '').trim(), gemini = (h.get('gemini') || '').trim();
+  if (!claude && !gemini) return false;
+  if (claude) store.set('claudeKey', claude);
+  if (gemini) store.set('geminiKey', gemini);
   history.replaceState(null, '', location.pathname + location.search);
   return true;
 }
@@ -226,9 +242,12 @@ const setupDone = applySetupLink();
 
 const cfg = () => ({
   clientId: (store.get('clientId', '') || '').trim() || DEFAULT_CLIENT_ID,
+  claudeKey: (store.get('claudeKey', '') || '').trim(),
+  claudeModel: (store.get('claudeModel', '') || '').trim() || 'claude-opus-5-5',
   geminiKey: (store.get('geminiKey', '') || '').trim(),
   model: (store.get('model', '') || '').trim() || 'gemini-flash-latest'
 });
+const hasReader = () => !!(cfg().claudeKey || cfg().geminiKey);
 
 const $ = id => document.getElementById(id);
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -377,21 +396,27 @@ async function readShareInbox() {
   } catch { return false; }
 }
 
-// ---------- reading events with Gemini ----------
+// ---------- preparing images ----------
 function blobToB64(blob) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
 }
-async function imageToPart(file) {
+// Shrinks big photos to JPEG before upload; returns { mime, data } (base64).
+async function prepareImage(file) {
   try {
     const bmp = await createImageBitmap(file);
     const max = 1800, scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
     c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.86));
-    return { inline_data: { mime_type: 'image/jpeg', data: await blobToB64(blob) } };
+    return { mime: 'image/jpeg', data: await blobToB64(blob) };
   } catch {
-    return { inline_data: { mime_type: file.type, data: await blobToB64(file) } };
+    return { mime: file.type, data: await blobToB64(file) };
   }
+}
+async function prepareFiles(fileList) {
+  const out = [];
+  for (const f of fileList) out.push(f.type === 'application/pdf' ? { mime: 'application/pdf', data: await blobToB64(f) } : await prepareImage(f));
+  return out;
 }
 
 const SCHEMA = {
@@ -416,32 +441,122 @@ function todayStr(d = new Date()) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-async function extractEvents(text, fileList) {
-  const { geminiKey, model } = cfg();
+function buildInstructions() {
   const now = new Date();
   const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const instructions =
-`You turn messy text and images into Google Calendar events.
+  return `You turn messy text and images into Google Calendar events.
 Today is ${weekday}, ${todayStr(now)}. The user's time zone is ${tz}.
 
 Rules:
 - Return every distinct event, appointment, game, practice, class, deadline or reservation you can find. Ignore anything without a date.
-- Resolve relative dates ("tomorrow", "next Friday", "the 3rd") against today. If a year is missing, use the next upcoming occurrence.
+- Images are often screenshots of schedules, team apps, calendars or lists. Read the whole image top to bottom and return one event for every dated row or entry, including rows that are faded, partly cut off at the edges, or under a different month heading, as long as the date is legible. Never stop after the first entry.
+- Resolve relative dates ("tomorrow", "next Friday", "the 3rd") against today. If a year is missing, use the next upcoming occurrence. Use month headings (like "NOV 2026") for the rows under them.
 - If the same activity happens on several listed dates, return one event per date. Do not invent dates for vague "every week" phrases with no end.
-- Times in 24-hour HH:MM. If no time is given, set allDay true and leave times empty. If only a start time is given, leave endTime empty.
+- Times in 24-hour HH:MM, as written (labels like EDT/EST just mark daylight saving; don't convert). If no time is given, set allDay true and leave times empty. If only a start time is given, leave endTime empty.
 - Deadlines and due dates become all-day events titled like "Due: ...".
-- Titles: short and specific (who/what), no dates in the title.
+- Titles: short and specific (who/what), no dates in the title. For games and matches use "Team A vs Team B" as listed.
 - location: venue or address if stated, else empty.
-- description: useful details only (what to bring, cost, contact, links, notes). Keep it brief.
-- If there are no events, return [].`;
+- description: useful details only (what to bring, cost, contact, links, notes). Keep it brief, or empty.
+- If there are no events, return an empty list.`;
+}
 
-  const parts = [{ text: instructions }];
-  if (text.trim()) parts.push({ text: 'TEXT FROM USER:\n' + text.trim() });
-  for (const f of fileList) {
-    parts.push(f.type === 'application/pdf'
-      ? { inline_data: { mime_type: 'application/pdf', data: await blobToB64(f) } }
-      : await imageToPart(f));
+// Turns the model's raw events into the review list's shape, dropping anything without a usable date.
+function cleanEvents(arr) {
+  return (Array.isArray(arr) ? arr : []).filter(e => e && e.title && /^\d{4}-\d{2}-\d{2}$/.test(e.date)).map(e => ({
+    title: String(e.title).trim(),
+    date: e.date,
+    startTime: /^\d{1,2}:\d{2}$/.test(e.startTime || '') ? e.startTime.padStart(5, '0') : '',
+    endDate: /^\d{4}-\d{2}-\d{2}$/.test(e.endDate || '') ? e.endDate : '',
+    endTime: /^\d{1,2}:\d{2}$/.test(e.endTime || '') ? e.endTime.padStart(5, '0') : '',
+    allDay: !!e.allDay || !e.startTime,
+    location: (e.location || '').trim(),
+    description: (e.description || '').trim(),
+    selected: true, status: '', link: ''
+  }));
+}
+
+function extractEvents(text, fileList) {
+  return cfg().claudeKey ? extractWithClaude(text, fileList) : extractWithGemini(text, fileList);
+}
+
+// ---------- reading events with Claude ----------
+const CLAUDE_SCHEMA = {
+  type: 'object',
+  properties: {
+    events: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          date: { type: 'string', description: 'Start date, YYYY-MM-DD' },
+          startTime: { type: 'string', description: '24h HH:MM, empty if all-day' },
+          endDate: { type: 'string', description: 'YYYY-MM-DD, empty if same day' },
+          endTime: { type: 'string', description: '24h HH:MM, empty if unknown' },
+          allDay: { type: 'boolean' },
+          location: { type: 'string' },
+          description: { type: 'string' }
+        },
+        required: ['title', 'date', 'startTime', 'endDate', 'endTime', 'allDay', 'location', 'description'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['events'],
+  additionalProperties: false
+};
+
+let sdkPromise = null;
+const loadAnthropic = () => (sdkPromise ||= import('./anthropic-sdk.js').then(m => m.default).catch(e => { sdkPromise = null; throw e; }));
+
+async function extractWithClaude(text, fileList) {
+  const { claudeKey, claudeModel } = cfg();
+  const Anthropic = await loadAnthropic();
+  // Fine here: the key is the user's own, kept only on their device, and requests go straight to Anthropic.
+  const client = new Anthropic({ apiKey: claudeKey, dangerouslyAllowBrowser: true });
+
+  const content = [];
+  for (const f of await prepareFiles(fileList)) {
+    content.push(f.mime === 'application/pdf'
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } }
+      : { type: 'image', source: { type: 'base64', media_type: f.mime, data: f.data } });
   }
+  content.push({ type: 'text', text: text.trim() ? 'TEXT FROM USER:\n' + text.trim() : 'Find the events in the attached images.' });
+
+  let msg;
+  try {
+    msg = await client.beta.messages.create({
+      model: claudeModel,
+      max_tokens: 16000,
+      system: buildInstructions(),
+      messages: [{ role: 'user', content }],
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: CLAUDE_SCHEMA } },
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default'
+    });
+  } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError) throw new Error('Your Claude API key was rejected. Check it in Settings.');
+    if (err instanceof Anthropic.PermissionDeniedError) throw new Error("Your Claude key can't use this model. Check it in Settings.");
+    if (err instanceof Anthropic.NotFoundError) throw new Error(`The model “${claudeModel}” wasn't found. Change it in Settings.`);
+    if (err instanceof Anthropic.RateLimitError) throw new Error('Claude is rate-limiting you. Wait a minute and try again.');
+    if (err instanceof Anthropic.APIError && /credit balance/i.test(err.message || '')) throw new Error('Your Claude account is out of credit. Add some under Billing in the Claude Console.');
+    if (err instanceof Anthropic.APIConnectionError) throw new Error("Couldn't reach Claude. Check your connection and try again.");
+    throw new Error(err?.error?.error?.message || err?.message || 'Claude ran into an error.');
+  }
+  if (msg.stop_reason === 'refusal') throw new Error("Claude declined to read this one. Try cropping the image to just the schedule.");
+  if (msg.stop_reason === 'max_tokens') throw new Error('That was too much to read at once. Try fewer images.');
+  const out = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  let parsed;
+  try { parsed = JSON.parse(out); } catch { throw new Error("Couldn't read the events. Try again."); }
+  return cleanEvents(parsed.events);
+}
+
+// ---------- reading events with Gemini ----------
+async function extractWithGemini(text, fileList) {
+  const { geminiKey, model } = cfg();
+  const parts = [{ text: buildInstructions() }];
+  if (text.trim()) parts.push({ text: 'TEXT FROM USER:\n' + text.trim() });
+  for (const f of await prepareFiles(fileList)) parts.push({ inline_data: { mime_type: f.mime, data: f.data } });
 
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
@@ -462,17 +577,7 @@ Rules:
   const out = (body.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
   let arr;
   try { arr = JSON.parse(out); } catch { throw new Error("Couldn't read the events. Try again."); }
-  return (Array.isArray(arr) ? arr : []).filter(e => e && e.title && /^\d{4}-\d{2}-\d{2}$/.test(e.date)).map(e => ({
-    title: String(e.title).trim(),
-    date: e.date,
-    startTime: /^\d{1,2}:\d{2}$/.test(e.startTime || '') ? e.startTime.padStart(5, '0') : '',
-    endDate: /^\d{4}-\d{2}-\d{2}$/.test(e.endDate || '') ? e.endDate : '',
-    endTime: /^\d{1,2}:\d{2}$/.test(e.endTime || '') ? e.endTime.padStart(5, '0') : '',
-    allDay: !!e.allDay || !e.startTime,
-    location: (e.location || '').trim(),
-    description: (e.description || '').trim(),
-    selected: true, status: '', link: ''
-  }));
+  return cleanEvents(arr);
 }
 
 // ---------- review list ----------
@@ -595,7 +700,7 @@ $('acctChip').onclick = () => {
 async function runFind() {
   const text = $('text').value;
   if (!text.trim() && !files.length) { toast('Paste some text or add a photo first.'); return; }
-  if (!cfg().geminiKey) { toast('Add your Gemini API key in Settings first.'); openSettings(); return; }
+  if (!hasReader()) { toast('Add your Claude API key in Settings first.'); openSettings(); return; }
   const btn = $('findBtn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Reading…';
   try {
     const found = await extractEvents(text, files.map(f => f.file));
@@ -630,6 +735,7 @@ function fillSettings() {
   const c = cfg();
   $('clientId').value = store.get('clientId', '') || '';
   $('clientId').placeholder = DEFAULT_CLIENT_ID ? 'Built in (optional)' : '1234…apps.googleusercontent.com'; $('geminiKey').value = c.geminiKey;
+  $('claudeKey').value = c.claudeKey; $('claudeModel').value = store.get('claudeModel', '') || '';
   $('model').value = store.get('model', '') || '';
   $('originHint').textContent = location.origin;
   $('signOutBtn').hidden = !store.get('connected');
@@ -640,6 +746,8 @@ $('openSetup').onclick = openSettings;
 $('settingsForm').addEventListener('submit', () => {
   store.set('clientId', $('clientId').value.trim());
   store.set('geminiKey', $('geminiKey').value.trim());
+  store.set('claudeKey', $('claudeKey').value.trim());
+  store.set('claudeModel', $('claudeModel').value.trim());
   store.set('model', $('model').value.trim());
   tokenClient = null;
   if (cfg().clientId) loadGis().then(initTokenClient).catch(() => {});
@@ -654,7 +762,7 @@ $('signOutBtn').onclick = () => {
 
 function route() {
   const c = cfg();
-  $('welcome').hidden = !!c.geminiKey; $('app').hidden = false;
+  $('welcome').hidden = hasReader(); $('app').hidden = false;
   $('acctChip').hidden = !c.clientId;
 }
 
@@ -664,10 +772,10 @@ if (cfg().clientId) loadGis().then(() => { initTokenClient(); if (validToken()) 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-const setupToast = () => toast(validToken() ? 'Gemini key saved on this device. You’re all set.' : 'Gemini key saved on this device. Tap “Connect Google” to finish.', 5000);
+const setupToast = () => toast(validToken() ? 'Key saved on this device. You’re all set.' : 'Key saved on this device. Tap “Connect Google” to finish.', 5000);
 if (setupDone) setupToast();
 window.addEventListener('hashchange', () => { if (applySetupLink()) { route(); setupToast(); } });
-readShareInbox().then(had => { if (had && cfg().geminiKey) runFind(); });
+readShareInbox().then(had => { if (had && hasReader()) runFind(); });
 })();
 </script>
 </body>
