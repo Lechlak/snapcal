@@ -1,8 +1,8 @@
 // SnapCal service worker: offline app shell + Android "Share to SnapCal" inbox.
-const SHELL = 'snapcal-shell-v1';
+const SHELL = 'snapcal-shell-v2';
 const INBOX = 'snapcal-share-inbox';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
+  './anthropic-sdk.js', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
