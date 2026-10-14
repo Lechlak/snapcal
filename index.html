@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SnapCal</title>
+<meta name="description" content="Paste text or snap a photo, and the events go straight into Google Calendar.">
+<meta name="theme-color" content="#1f6f5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SnapCal">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+:root{
+  --bg:#f6f4ef; --surface:#ffffff; --surface-2:#efece5; --ink:#1d2421; --ink-2:#5b6661; --line:#dcd7cc;
+  --accent:#1f6f5c; --accent-ink:#ffffff; --accent-soft:#dcefe8; --warm:#f2b84b; --danger:#b3412f; --ok:#2e7d4f;
+  --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.05);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#121614; --surface:#1b211e; --surface-2:#242b27; --ink:#e8ece9; --ink-2:#9aa6a0; --line:#323b36;
+    --accent:#4fb596; --accent-ink:#0d1a15; --accent-soft:#1d3a31; --warm:#f2b84b; --danger:#ef7a66; --ok:#6fcf97;
+    --shadow:none; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;min-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:var(--accent)}
+.wrap{max-width:640px;margin:0 auto;padding:0 16px 48px}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);padding-top:env(safe-area-inset-top)}
+.bar{max-width:640px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:19px;letter-spacing:-.01em;margin-right:auto}
+.logo img{width:30px;height:30px;border-radius:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;
+  padding:6px 12px;font-size:14px;cursor:pointer}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-2)}
+.chip.on .dot{background:var(--ok)}
+.icon-btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
+.icon-btn svg{width:18px;height:18px}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);margin:28px 0 10px;font-weight:600}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+textarea{width:100%;min-height:150px;resize:vertical;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:12px;line-height:1.45}
+textarea:focus,input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+.drop{margin-top:12px;border:1.5px dashed var(--line);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--ink-2)}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop svg{flex:none;width:26px;height:26px;color:var(--accent)}
+.drop b{color:var(--ink)}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.thumb{position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--surface-2);display:grid;place-items:center;font-size:12px;color:var(--ink-2)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.thumb button{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:1;cursor:pointer}
+.btn{border:0;border-radius:12px;padding:13px 18px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;border:1px solid var(--line)}
+.btn.block{width:100%}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;align-items:center}
+.actions{display:flex;gap:10px;margin-top:14px}
+.actions .btn.primary{flex:1}
+.spin{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .7s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+.muted{color:var(--ink-2);font-size:14px}
+.cal-pick{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cal-pick label{font-size:14px;color:var(--ink-2);white-space:nowrap}
+select,input[type=text],input[type=password],input[type=date],input[type=time]{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:9px 10px;min-width:0}
+.cal-pick select{flex:1}
+.ev{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px;margin-bottom:10px;border-left:4px solid var(--accent)}
+.ev.off{opacity:.55;border-left-color:var(--line)}
+.ev.done{border-left-color:var(--ok)}
+.ev.err{border-left-color:var(--danger)}
+.ev-top{display:flex;gap:10px;align-items:center}
+.ev-top input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none}
+.ev-title{flex:1;font-weight:600;border:0 !important;background:transparent !important;padding:4px 0 !important;font-size:17px}
+.ev-title:focus{outline:none !important;border-bottom:2px solid var(--accent) !important}
+.x{border:0;background:transparent;color:var(--ink-2);font-size:22px;line-height:1;cursor:pointer;padding:4px 6px}
+.ev-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.ev-grid .full{grid-column:1/-1}
+.ev-grid input{width:100%}
+.f{display:flex;flex-direction:column;gap:3px}
+.f span{font-size:12px;color:var(--ink-2)}
+.allday{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-2)}
+.ev-grid .allday input{accent-color:var(--accent);width:20px;height:20px;flex:none}
+.allday{white-space:nowrap}
+.status{margin-top:8px;font-size:14px}
+.status.ok{color:var(--ok)} .status.bad{color:var(--danger)}
+.empty{text-align:center;padding:26px 12px;color:var(--ink-2)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:12px;font-size:15px;transition:.25s;max-width:calc(100% - 32px);z-index:20;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%)}
+dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);width:min(560px,calc(100% - 24px));padding:0;max-height:calc(100dvh - 40px)}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+.dlg{padding:20px}
+.dlg h3{margin:0 0 4px;font-size:20px}
+.dlg .f{margin-top:14px}
+.dlg .f input{width:100%}
+.dlg .f span{font-size:13px}
+details{margin-top:6px;font-size:14px;color:var(--ink-2)}
+details summary{cursor:pointer;color:var(--accent)}
+details ol{padding-left:20px;margin:8px 0}
+.welcome{margin-top:24px}
+.welcome h1{font-size:28px;letter-spacing:-.02em;margin:0 0 6px}
+.steps{list-style:none;padding:0;margin:16px 0}
+.steps li{display:flex;gap:12px;margin:10px 0}
+.steps .n{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:14px}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo"><img src="icons/icon-192.png" alt="">SnapCal</div>
+    <button class="chip" id="acctChip" type="button"><span class="dot"></span><span id="acctLabel">Connect Google</span></button>
+    <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- First-run screen -->
+  <section id="welcome" class="welcome" hidden>
+    <h1>Stop typing in events.</h1>
+    <p class="muted">Paste a message, an email or a school newsletter, or snap a photo of a flyer. SnapCal finds the dates and puts them in your Google Calendar.</p>
+    <ol class="steps">
+      <li><span class="n">1</span><span>Open your setup link, or add your Gemini key in Settings (one-time).</span></li>
+      <li><span class="n">2</span><span>Connect your Google account.</span></li>
+      <li><span class="n">3</span><span>Paste or snap, review, and tap Add.</span></li>
+    </ol>
+    <button class="btn primary block" id="openSetup" type="button">Open settings</button>
+  </section>
+
+  <section id="app" hidden>
+    <h2>1 · Paste or snap</h2>
+    <div class="card">
+      <textarea id="text" placeholder="Paste anything with dates in it: a text thread, an email, a schedule…"></textarea>
+      <label class="drop" id="drop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span><b>Add photos or screenshots</b><br><span class="muted">Tap to choose, take a photo, or drop / paste images. PDFs work too.</span></span>
+        <input type="file" id="file" accept="image/*,application/pdf" multiple hidden>
+      </label>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="actions">
+        <button class="btn ghost" id="clearBtn" type="button">Clear</button>
+        <button class="btn primary" id="findBtn" type="button">Find events</button>
+      </div>
+    </div>
+
+    <section id="review" hidden>
+      <h2>2 · Review &amp; add</h2>
+      <div class="cal-pick">
+        <label for="calSel">Calendar</label>
+        <select id="calSel"><option value="primary">Primary calendar</option></select>
+      </div>
+      <div id="events"></div>
+      <button class="btn primary block" id="addBtn" type="button">Add to Google Calendar</button>
+      <p class="muted" style="text-align:center;margin-top:10px" id="addHint"></p>
+    </section>
+  </section>
+</main>
+
+<dialog id="settings">
+  <form method="dialog" class="dlg" id="settingsForm">
+    <h3>Settings</h3>
+    <p class="muted" style="margin:0">Saved only on this device. Set them up once on each phone or computer you use.</p>
+
+    <label class="f"><span>Google OAuth Client ID</span>
+      <input type="text" id="clientId" placeholder="1234…apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
+    <details><summary>Where do I get this?</summary>
+      <ol>
+        <li>Open <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener">Google Cloud → Calendar API</a> and click <b>Enable</b>.</li>
+        <li>Go to <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener">Clients</a> → <b>Create client</b> → type <b>Web application</b>.</li>
+        <li>Under <b>Authorized JavaScript origins</b> add <code id="originHint"></code>.</li>
+        <li>Copy the Client ID here. Full details are in the setup guide.</li>
+      </ol>
+    </details>
+
+    <label class="f"><span>Gemini API key (reads your text and images)</span>
+      <input type="password" id="geminiKey" placeholder="AIza…" autocomplete="off" spellcheck="false"></label>
+    <details><summary>Where do I get this?</summary>
+      <ol>
+        <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio → API keys</a>.</li>
+        <li>Click <b>Create API key</b> and paste it here.</li>
+      </ol>
+    </details>
+
+    <label class="f"><span>Gemini model</span>
+      <input type="text" id="model" placeholder="gemini-flash-latest" autocomplete="off" spellcheck="false"></label>
+
+    <div class="actions">
+      <button class="btn ghost" id="signOutBtn" type="button">Disconnect Google</button>
+      <button class="btn primary" id="saveSettings" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- storage helpers ----------
+const store = {
+  get(k, d = null) { try { const v = localStorage.getItem('snapcal.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('snapcal.' + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem('snapcal.' + k); } catch {} }
+};
+// Andy's Google sign-in Client ID. Safe to publish: it only identifies the app, it grants nothing on its own.
+const DEFAULT_CLIENT_ID = '230486710280-8bdtq6p9uv08o8mv95rtbvtr1k6gis1d.apps.googleusercontent.com';
+
+// One-tap setup: opening the app with #gemini=KEY saves the key on this device and removes it
+// from the address bar. The part after # is never sent to the web server.
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const key = (h.get('gemini') || '').trim();
+  if (!key) return;
+  store.set('geminiKey', key);
+  history.replaceState(null, '', location.pathname + location.search);
+  window.__snapcalSetupDone = true;
+})();
+
+const cfg = () => ({
+  clientId: (store.get('clientId', '') || '').trim() || DEFAULT_CLIENT_ID,
+  geminiKey: (store.get('geminiKey', '') || '').trim(),
+  model: (store.get('model', '') || '').trim() || 'gemini-flash-latest'
+});
+
+const $ = id => document.getElementById(id);
+const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+
+let toastTimer;
+function toast(msg, ms = 3200) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// ---------- Google sign-in (Google Identity Services token flow) ----------
+let gisReady = null, tokenClient = null, pending = null;
+
+function loadGis() {
+  if (gisReady) return gisReady;
+  gisReady = new Promise((res, rej) => {
+    if (window.google?.accounts?.oauth2) return res();
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+    s.onload = () => res(); s.onerror = () => { gisReady = null; rej(new Error('Could not load Google sign-in. Check your connection.')); };
+    document.head.appendChild(s);
+  });
+  return gisReady;
+}
+
+function initTokenClient() {
+  const { clientId } = cfg();
+  if (!clientId || !window.google?.accounts?.oauth2) return null;
+  if (tokenClient && tokenClient._cid === clientId) return tokenClient;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPES,
+    callback: resp => {
+      const p = pending; pending = null;
+      if (resp.error) { p?.reject(new Error(resp.error_description || resp.error)); return; }
+      const tok = { access_token: resp.access_token, expires_at: Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000 };
+      store.set('token', tok); store.set('connected', true);
+      p?.resolve(tok.access_token);
+      onConnected();
+    },
+    error_callback: err => {
+      const p = pending; pending = null;
+      p?.reject(new Error(err?.type === 'popup_closed' ? 'Sign-in window was closed.' :
+        err?.type === 'popup_failed_to_open' ? 'Sign-in popup was blocked. Allow popups for this site and try again.' : 'Google sign-in failed.'));
+    }
+  });
+  tokenClient._cid = clientId;
+  return tokenClient;
+}
+
+function validToken() {
+  const t = store.get('token');
+  return t && t.expires_at > Date.now() ? t.access_token : null;
+}
+
+// Must be called directly from a tap (no awaits before it) so the popup isn't blocked.
+function getToken() {
+  const t = validToken();
+  if (t) return Promise.resolve(t);
+  const tc = initTokenClient();
+  if (!tc) return Promise.reject(new Error(cfg().clientId ? 'Google sign-in is still loading. Try again in a second.' : 'Add your Google Client ID in Settings first.'));
+  return new Promise((resolve, reject) => {
+    pending = { resolve, reject };
+    tc.requestAccessToken({ prompt: store.get('connected') ? '' : 'consent' });
+  });
+}
+
+async function gapi(path, opts = {}, retry = true) {
+  const token = validToken();
+  if (!token) throw Object.assign(new Error('Google session expired. Tap “Connect Google”.'), { auth: true });
+  const res = await fetch('https://www.googleapis.com/calendar/v3' + path, {
+    ...opts, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) }
+  });
+  if (res.status === 401) { store.del('token'); throw Object.assign(new Error('Google session expired. Tap “Connect Google”.'), { auth: true }); }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error?.message || ('Google Calendar error ' + res.status));
+  return body;
+}
+
+function updateChip() {
+  const on = !!validToken();
+  $('acctChip').classList.toggle('on', on);
+  $('acctLabel').textContent = on ? (store.get('email') || 'Connected') : 'Connect Google';
+}
+
+async function onConnected() {
+  updateChip();
+  try {
+    const list = await gapi('/users/me/calendarList?minAccessRole=writer&maxResults=250');
+    const items = (list.items || []).sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0) || a.summary.localeCompare(b.summary));
+    const prim = items.find(c => c.primary);
+    if (prim) store.set('email', prim.id);
+    store.set('calendars', items.map(c => ({ id: c.id, name: c.summaryOverride || c.summary, primary: !!c.primary })));
+    renderCalendars();
+    updateChip();
+  } catch (e) { if (!e.auth) toast(e.message); }
+}
+
+function renderCalendars() {
+  const sel = $('calSel'), cals = store.get('calendars', []), chosen = store.get('calendar', 'primary');
+  sel.innerHTML = '';
+  if (!cals.length) sel.append(new Option('Primary calendar', 'primary'));
+  cals.forEach(c => sel.append(new Option(c.primary ? c.name + ' (primary)' : c.name, c.primary ? 'primary' : c.id)));
+  sel.value = [...sel.options].some(o => o.value === chosen) ? chosen : 'primary';
+}
+
+// ---------- inputs: images, paste, share ----------
+let files = []; // {file, url}
+
+function addFiles(list) {
+  for (const f of list) {
+    if (!f || !(f.type.startsWith('image/') || f.type === 'application/pdf')) continue;
+    files.push({ file: f, url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null });
+  }
+  renderThumbs();
+}
+function renderThumbs() {
+  const box = $('thumbs'); box.innerHTML = '';
+  files.forEach((x, i) => {
+    const d = document.createElement('div'); d.className = 'thumb';
+    if (x.url) { const im = document.createElement('img'); im.src = x.url; im.alt = ''; d.append(im); }
+    else d.textContent = 'PDF';
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = '×'; b.setAttribute('aria-label', 'Remove');
+    b.onclick = e => { e.preventDefault(); if (x.url) URL.revokeObjectURL(x.url); files.splice(i, 1); renderThumbs(); };
+    d.append(b); box.append(d);
+  });
+}
+
+async function readShareInbox() {
+  if (!new URLSearchParams(location.search).has('shared')) return false;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const inbox = await caches.open('snapcal-share-inbox');
+    const t = await inbox.match('text');
+    if (t) { const s = await t.text(); if (s) $('text').value = ($('text').value ? $('text').value + '\n\n' : '') + s; }
+    const n = Number(await (await inbox.match('count'))?.text() || 0);
+    const got = [];
+    for (let i = 0; i < n; i++) {
+      const r = await inbox.match('file-' + i);
+      if (r) { const blob = await r.blob(); got.push(new File([blob], decodeURIComponent(r.headers.get('X-Name') || 'shared'), { type: blob.type })); }
+    }
+    addFiles(got);
+    await caches.delete('snapcal-share-inbox');
+    return !!(t || got.length);
+  } catch { return false; }
+}
+
+// ---------- reading events with Gemini ----------
+function blobToB64(blob) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+}
+async function imageToPart(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const max = 1800, scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.86));
+    return { inline_data: { mime_type: 'image/jpeg', data: await blobToB64(blob) } };
+  } catch {
+    return { inline_data: { mime_type: file.type, data: await blobToB64(file) } };
+  }
+}
+
+const SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      title: { type: 'STRING' },
+      date: { type: 'STRING', description: 'Start date, YYYY-MM-DD' },
+      startTime: { type: 'STRING', description: '24h HH:MM, empty if all-day' },
+      endDate: { type: 'STRING', description: 'YYYY-MM-DD, empty if same day' },
+      endTime: { type: 'STRING', description: '24h HH:MM, empty if unknown' },
+      allDay: { type: 'BOOLEAN' },
+      location: { type: 'STRING' },
+      description: { type: 'STRING' }
+    },
+    required: ['title', 'date', 'allDay']
+  }
+};
+
+function todayStr(d = new Date()) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+async function extractEvents(text, fileList) {
+  const { geminiKey, model } = cfg();
+  const now = new Date();
+  const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const instructions =
+`You turn messy text and images into Google Calendar events.
+Today is ${weekday}, ${todayStr(now)}. The user's time zone is ${tz}.
+
+Rules:
+- Return every distinct event, appointment, game, practice, class, deadline or reservation you can find. Ignore anything without a date.
+- Resolve relative dates ("tomorrow", "next Friday", "the 3rd") against today. If a year is missing, use the next upcoming occurrence.
+- If the same activity happens on several listed dates, return one event per date. Do not invent dates for vague "every week" phrases with no end.
+- Times in 24-hour HH:MM. If no time is given, set allDay true and leave times empty. If only a start time is given, leave endTime empty.
+- Deadlines and due dates become all-day events titled like "Due: ...".
+- Titles: short and specific (who/what), no dates in the title.
+- location: venue or address if stated, else empty.
+- description: useful details only (what to bring, cost, contact, links, notes). Keep it brief.
+- If there are no events, return [].`;
+
+  const parts = [{ text: instructions }];
+  if (text.trim()) parts.push({ text: 'TEXT FROM USER:\n' + text.trim() });
+  for (const f of fileList) {
+    parts.push(f.type === 'application/pdf'
+      ? { inline_data: { mime_type: 'application/pdf', data: await blobToB64(f) } }
+      : await imageToPart(f));
+  }
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.1 }
+    })
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = body?.error?.message || ('Gemini error ' + res.status);
+    if (/API key/i.test(msg)) throw new Error('Your Gemini API key was rejected. Check it in Settings.');
+    if (res.status === 404) throw new Error(`The model “${model}” wasn't found. Change it in Settings.`);
+    if (res.status === 429) throw new Error('Gemini is rate-limiting you. Wait a minute and try again.');
+    throw new Error(msg);
+  }
+  const out = (body.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+  let arr;
+  try { arr = JSON.parse(out); } catch { throw new Error("Couldn't read the events. Try again."); }
+  return (Array.isArray(arr) ? arr : []).filter(e => e && e.title && /^\d{4}-\d{2}-\d{2}$/.test(e.date)).map(e => ({
+    title: String(e.title).trim(),
+    date: e.date,
+    startTime: /^\d{1,2}:\d{2}$/.test(e.startTime || '') ? e.startTime.padStart(5, '0') : '',
+    endDate: /^\d{4}-\d{2}-\d{2}$/.test(e.endDate || '') ? e.endDate : '',
+    endTime: /^\d{1,2}:\d{2}$/.test(e.endTime || '') ? e.endTime.padStart(5, '0') : '',
+    allDay: !!e.allDay || !e.startTime,
+    location: (e.location || '').trim(),
+    description: (e.description || '').trim(),
+    selected: true, status: '', link: ''
+  }));
+}
+
+// ---------- review list ----------
+let events = [];
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function renderEvents() {
+  const box = $('events');
+  $('review').hidden = false;
+  if (!events.length) {
+    box.innerHTML = '<div class="card empty">No events found. Try adding more detail, or a clearer photo.</div>';
+    $('addBtn').hidden = true; $('addHint').textContent = ''; return;
+  }
+  $('addBtn').hidden = false;
+  box.innerHTML = events.map((e, i) => `
+    <div class="ev ${e.selected ? '' : 'off'} ${e.status === 'done' ? 'done' : ''} ${e.status === 'error' ? 'err' : ''}" data-i="${i}">
+      <div class="ev-top">
+        <input type="checkbox" data-k="selected" ${e.selected ? 'checked' : ''} ${e.status === 'done' ? 'disabled' : ''} aria-label="Include">
+        <input type="text" class="ev-title" data-k="title" value="${esc(e.title)}" aria-label="Title">
+        <button class="x" type="button" data-act="remove" aria-label="Remove">×</button>
+      </div>
+      <div class="ev-grid">
+        <label class="f"><span>Date</span><input type="date" data-k="date" value="${esc(e.date)}"></label>
+        <label class="allday" style="align-self:end;padding-bottom:9px"><input type="checkbox" data-k="allDay" ${e.allDay ? 'checked' : ''}> All day</label>
+        ${e.allDay ? '' : `
+        <label class="f"><span>Start</span><input type="time" data-k="startTime" value="${esc(e.startTime)}"></label>
+        <label class="f"><span>End</span><input type="time" data-k="endTime" value="${esc(e.endTime)}"></label>`}
+        <label class="f full"><span>Location</span><input type="text" data-k="location" value="${esc(e.location)}" placeholder="Optional"></label>
+        <label class="f full"><span>Notes</span><input type="text" data-k="description" value="${esc(e.description)}" placeholder="Optional"></label>
+      </div>
+      ${e.status === 'done' ? `<div class="status ok">Added ✓ ${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">Open in Calendar</a>` : ''}</div>` : ''}
+      ${e.status === 'error' ? `<div class="status bad">${esc(e.error)}</div>` : ''}
+    </div>`).join('');
+  updateAddBtn();
+}
+
+function updateAddBtn() {
+  const n = events.filter(e => e.selected && e.status !== 'done').length;
+  const done = events.filter(e => e.status === 'done').length;
+  $('addBtn').disabled = n === 0;
+  $('addBtn').textContent = n ? `Add ${n} event${n > 1 ? 's' : ''} to Google Calendar` : (done ? 'All added' : 'Nothing selected');
+  $('addHint').textContent = validToken() ? '' : "You'll be asked to connect Google the first time.";
+}
+
+$('events').addEventListener('input', ev => {
+  const card = ev.target.closest('.ev'); const k = ev.target.dataset.k; if (!card || !k) return;
+  const e = events[+card.dataset.i];
+  if (ev.target.type === 'checkbox') {
+    e[k] = ev.target.checked;
+    if (k === 'allDay' && !e.allDay && !e.startTime) e.startTime = '09:00';
+    renderEvents();
+  } else { e[k] = ev.target.value; if (e.status === 'error') e.status = ''; }
+});
+$('events').addEventListener('click', ev => {
+  if (ev.target.dataset.act !== 'remove') return;
+  events.splice(+ev.target.closest('.ev').dataset.i, 1); renderEvents();
+});
+
+// ---------- creating calendar events ----------
+function addDays(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return todayStr(new Date(y, m - 1, d + n));
+}
+function plusMinutes(dateStr, time, mins) {
+  const [y, m, d] = dateStr.split('-').map(Number), [h, mi] = time.split(':').map(Number);
+  const t = new Date(y, m - 1, d, h, mi + mins);
+  return { date: todayStr(t), time: String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') };
+}
+function toGoogle(e) {
+  const body = { summary: e.title };
+  if (e.location) body.location = e.location;
+  if (e.description) body.description = e.description;
+  if (e.allDay || !e.startTime) {
+    const last = e.endDate && e.endDate >= e.date ? e.endDate : e.date;
+    body.start = { date: e.date };
+    body.end = { date: addDays(last, 1) };
+  } else {
+    let end;
+    if (e.endTime) {
+      let endDate = e.endDate && e.endDate >= e.date ? e.endDate : e.date;
+      if (endDate === e.date && e.endTime <= e.startTime) endDate = addDays(e.date, 1);
+      end = { date: endDate, time: e.endTime };
+    } else end = plusMinutes(e.date, e.startTime, 60);
+    body.start = { dateTime: `${e.date}T${e.startTime}:00`, timeZone: tz };
+    body.end = { dateTime: `${end.date}T${end.time}:00`, timeZone: tz };
+  }
+  return body;
+}
+
+async function addAll() {
+  const cal = $('calSel').value || 'primary';
+  const todo = events.filter(e => e.selected && e.status !== 'done');
+  const btn = $('addBtn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Adding…';
+  let ok = 0, bad = 0;
+  for (const e of todo) {
+    if (!e.title.trim() || !e.date) { e.status = 'error'; e.error = 'Needs a title and a date.'; bad++; continue; }
+    try {
+      const r = await gapi(`/calendars/${encodeURIComponent(cal)}/events`, { method: 'POST', body: JSON.stringify(toGoogle(e)) });
+      e.status = 'done'; e.link = r.htmlLink || ''; e.selected = true; ok++;
+    } catch (err) {
+      e.status = 'error'; e.error = err.message; bad++;
+      if (err.auth) { updateChip(); break; }
+    }
+  }
+  renderEvents();
+  toast(bad ? `Added ${ok}, ${bad} need attention.` : `Added ${ok} event${ok === 1 ? '' : 's'} to your calendar.`);
+}
+
+// ---------- wiring ----------
+$('addBtn').onclick = () => {
+  getToken().then(() => { updateChip(); return addAll(); }).catch(err => toast(err.message, 4500));
+};
+
+$('acctChip').onclick = () => {
+  if (validToken()) { $('settings').showModal(); fillSettings(); return; }
+  getToken().catch(err => toast(err.message, 4500));
+};
+
+async function runFind() {
+  const text = $('text').value;
+  if (!text.trim() && !files.length) { toast('Paste some text or add a photo first.'); return; }
+  if (!cfg().geminiKey) { toast('Add your Gemini API key in Settings first.'); openSettings(); return; }
+  const btn = $('findBtn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Reading…';
+  try {
+    const found = await extractEvents(text, files.map(f => f.file));
+    events = found;
+    renderEvents();
+    $('review').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (found.length) toast(`Found ${found.length} event${found.length > 1 ? 's' : ''}. Check them, then tap Add.`);
+  } catch (err) { toast(err.message, 5000); }
+  finally { btn.disabled = false; btn.textContent = 'Find events'; }
+}
+$('findBtn').onclick = runFind;
+
+$('clearBtn').onclick = () => {
+  $('text').value = ''; files.forEach(f => f.url && URL.revokeObjectURL(f.url)); files = []; renderThumbs();
+  events = []; $('review').hidden = true; $('events').innerHTML = '';
+};
+
+$('file').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+const drop = $('drop');
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+document.addEventListener('paste', e => {
+  const imgs = [...(e.clipboardData?.files || [])];
+  if (imgs.length) { e.preventDefault(); addFiles(imgs); toast(`Added ${imgs.length} image${imgs.length > 1 ? 's' : ''}.`); }
+});
+
+$('calSel').onchange = e => store.set('calendar', e.target.value);
+
+// settings
+function fillSettings() {
+  const c = cfg();
+  $('clientId').value = store.get('clientId', '') || '';
+  $('clientId').placeholder = DEFAULT_CLIENT_ID ? 'Built in (optional)' : '1234…apps.googleusercontent.com'; $('geminiKey').value = c.geminiKey;
+  $('model').value = store.get('model', '') || '';
+  $('originHint').textContent = location.origin;
+  $('signOutBtn').hidden = !store.get('connected');
+}
+function openSettings() { fillSettings(); $('settings').showModal(); }
+$('settingsBtn').onclick = openSettings;
+$('openSetup').onclick = openSettings;
+$('settingsForm').addEventListener('submit', () => {
+  store.set('clientId', $('clientId').value.trim());
+  store.set('geminiKey', $('geminiKey').value.trim());
+  store.set('model', $('model').value.trim());
+  tokenClient = null;
+  if (cfg().clientId) loadGis().then(initTokenClient).catch(() => {});
+  route(); toast('Saved.');
+});
+$('signOutBtn').onclick = () => {
+  const t = store.get('token');
+  try { if (t && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(t.access_token, () => {}); } catch {}
+  ['token', 'connected', 'email', 'calendars', 'calendar'].forEach(store.del);
+  renderCalendars(); updateChip(); updateAddBtn(); $('settings').close(); toast('Google disconnected.');
+};
+
+function route() {
+  const c = cfg(), ready = !!(c.clientId && c.geminiKey);
+  $('welcome').hidden = ready; $('app').hidden = !ready;
+  $('acctChip').hidden = !c.clientId;
+}
+
+// boot
+route(); updateChip(); renderCalendars();
+if (cfg().clientId) loadGis().then(() => { initTokenClient(); if (validToken()) onConnected(); }).catch(e => toast(e.message));
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+if (window.__snapcalSetupDone) toast('Gemini key saved on this device. Tap “Connect Google” to finish.', 5000);
+readShareInbox().then(had => { if (had && cfg().geminiKey) runFind(); });
+})();
+</script>
+</body>
+</html>
